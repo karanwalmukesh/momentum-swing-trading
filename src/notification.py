@@ -20,119 +20,6 @@ class NotificationManager:
         if not all([self.sender_email, self.sender_password, self.recipient_email]):
             logger.warning("Email credentials not fully configured. Email alerts will be logged only.")
     
-    def generate_html_summary(self, entry_signals: List[Dict], exit_signals: List[Dict]) -> str:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
-        
-        html = f"""
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }}
-                .container {{ max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }}
-                h1 {{ color: #1a1a2e; border-bottom: 2px solid #e94560; padding-bottom: 10px; }}
-                .section {{ margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 5px; }}
-                table {{ width: 100%; border-collapse: collapse; margin: 10px 0; }}
-                th {{ background: #1a1a2e; color: white; padding: 10px; text-align: left; }}
-                td {{ padding: 10px; border-bottom: 1px solid #ddd; }}
-                .buy {{ color: #2ecc71; font-weight: bold; }}
-                .sell {{ color: #e74c3c; font-weight: bold; }}
-                .reason {{ font-style: italic; color: #7f8c8d; }}
-                .footer {{ margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd; font-size: 12px; color: #95a5a6; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1>📊 Momentum Swing Trading Signals</h1>
-                <p><strong>Generated:</strong> {timestamp}</p>
-        """
-        
-        if entry_signals:
-            html += """
-            <div class="section">
-                <h2>🔵 ENTRY SIGNALS ({0})</h2>
-                <table>
-                    <tr>
-                        <th>Ticker</th>
-                        <th>Sector</th>
-                        <th>Action</th>
-                        <th>Price</th>
-                        <th>Quantity</th>
-                        <th>Allocation</th>
-                        <th>Reason</th>
-                    </tr>
-            """.format(len(entry_signals))
-            
-            for signal in entry_signals:
-                html += f"""
-                    <tr>
-                        <td><strong>{signal['ticker']}</strong></td>
-                        <td>{signal['sector']}</td>
-                        <td class="buy">BUY</td>
-                        <td>₹{signal['price']:.2f}</td>
-                        <td>{signal['quantity']}</td>
-                        <td>₹{signal['allocated_capital']:,.2f}</td>
-                        <td class="reason">{signal['reason']}</td>
-                    </tr>
-                """
-            
-            html += "</table></div>"
-        
-        if exit_signals:
-            html += """
-            <div class="section">
-                <h2>🔴 EXIT SIGNALS ({0})</h2>
-                <table>
-                    <tr>
-                        <th>Ticker</th>
-                        <th>Sector</th>
-                        <th>Action</th>
-                        <th>Price</th>
-                        <th>Quantity</th>
-                        <th>P&L</th>
-                        <th>Hold Days</th>
-                        <th>Reason</th>
-                    </tr>
-            """.format(len(exit_signals))
-            
-            for signal in exit_signals:
-                pnl_color = "#2ecc71" if signal['pnl_amount'] >= 0 else "#e74c3c"
-                html += f"""
-                    <tr>
-                        <td><strong>{signal['ticker']}</strong></td>
-                        <td>{signal['sector']}</td>
-                        <td class="sell">SELL</td>
-                        <td>₹{signal['price']:.2f}</td>
-                        <td>{signal['quantity']}</td>
-                        <td style="color:{pnl_color};font-weight:bold;">
-                            ₹{signal['pnl_amount']:,.2f} ({signal['pnl_pct']:.2f}%)
-                        </td>
-                        <td>{signal['holding_days']}</td>
-                        <td class="reason">{signal['reason']}</td>
-                    </tr>
-                """
-            
-            html += "</table></div>"
-        
-        if not entry_signals and not exit_signals:
-            html += """
-            <div class="section">
-                <h2>⏸️ No New Signals</h2>
-                <p>No entry or exit signals generated in this scan.</p>
-            </div>
-            """
-        
-        html += """
-                <div class="footer">
-                    <p>This is an automated notification from your Momentum Swing Trading System.</p>
-                    <p>Please execute trades manually as per the instructions above.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-        
-        return html
-    
     def generate_html_summary_with_stats(self, entry_signals: List[Dict], exit_signals: List[Dict], stats: Dict = None) -> str:
         """Generate HTML email summary with scan statistics."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
@@ -168,7 +55,7 @@ class NotificationManager:
                 <p><strong>Generated:</strong> {timestamp}</p>
         """
         
-        # Add statistics section if available
+        # Statistics section
         if stats:
             html += f"""
                 <div class="section">
@@ -203,8 +90,8 @@ class NotificationManager:
                             <div class="stat-value">{stats.get('sector_limits_hit', 0)}</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-label">Already Held</div>
-                            <div class="stat-value">{stats.get('already_held', 0)}</div>
+                            <div class="stat-label">Liquidity Failures</div>
+                            <div class="stat-value">{stats.get('liquidity_fail', 0)}</div>
                         </div>
                         <div class="stat-item">
                             <div class="stat-label">Cash Insufficient</div>
@@ -230,6 +117,7 @@ class NotificationManager:
                 <table>
                     <tr>
                         <th>Ticker</th>
+                        <th>Company</th>
                         <th>Sector</th>
                         <th>Action</th>
                         <th>Price</th>
@@ -242,8 +130,9 @@ class NotificationManager:
             for signal in entry_signals:
                 html += f"""
                     <tr>
-                        <td><strong>{signal['ticker']}</strong></td>
-                        <td>{signal['sector']}</td>
+                        <td><strong>{signal.get('symbol', signal['ticker'])}</strong></td>
+                        <td>{signal.get('company_name', 'N/A')[:20]}</td>
+                        <td>{signal.get('heatmap_sector', 'Unknown')}</td>
                         <td class="buy">BUY</td>
                         <td>₹{signal['price']:.2f}</td>
                         <td>{signal['quantity']}</td>
@@ -273,18 +162,18 @@ class NotificationManager:
             """.format(len(exit_signals))
             
             for signal in exit_signals:
-                pnl_color = "#2ecc71" if signal['pnl_amount'] >= 0 else "#e74c3c"
+                pnl_color = "#2ecc71" if signal.get('pnl_amount', 0) >= 0 else "#e74c3c"
                 html += f"""
                     <tr>
                         <td><strong>{signal['ticker']}</strong></td>
-                        <td>{signal['sector']}</td>
+                        <td>{signal.get('heatmap_sector', 'Unknown')}</td>
                         <td class="sell">SELL</td>
                         <td>₹{signal['price']:.2f}</td>
                         <td>{signal['quantity']}</td>
                         <td style="color:{pnl_color};font-weight:bold;">
-                            ₹{signal['pnl_amount']:,.2f} ({signal['pnl_pct']:.2f}%)
+                            ₹{signal.get('pnl_amount', 0):,.2f} ({signal.get('pnl_pct', 0):.2f}%)
                         </td>
-                        <td>{signal['holding_days']}</td>
+                        <td>{signal.get('holding_days', 0)}</td>
                         <td class="reason">{signal['reason']}</td>
                     </tr>
                 """
@@ -304,7 +193,7 @@ class NotificationManager:
                     <p>This is an automated notification from your Momentum Swing Trading System.</p>
                     <p>Please execute trades manually as per the instructions above.</p>
                     <p style="margin-top: 10px; font-size: 11px; color: #bdc3c7;">
-                        System scans 50 NIFTY 50 stocks every trading day at 4:30 PM IST.
+                        System scans stocks from NSE Sector Master CSV every trading day at 4:30 PM IST.
                     </p>
                 </div>
             </div>
@@ -322,12 +211,7 @@ class NotificationManager:
             return False
         
         try:
-            # Use enhanced summary with stats if provided
-            if stats:
-                html_content = self.generate_html_summary_with_stats(entry_signals, exit_signals, stats)
-            else:
-                html_content = self.generate_html_summary(entry_signals, exit_signals)
-            
+            html_content = self.generate_html_summary_with_stats(entry_signals, exit_signals, stats)
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
             
             msg = MIMEMultipart('alternative')
@@ -359,12 +243,12 @@ class NotificationManager:
         if entry_signals:
             logger.info(f"\nENTRY SIGNALS ({len(entry_signals)}):")
             for signal in entry_signals:
-                logger.info(f"  BUY {signal['ticker']} @ ₹{signal['price']:.2f} x {signal['quantity']} | {signal['reason']}")
+                logger.info(f"  BUY {signal.get('symbol', signal['ticker'])} @ ₹{signal['price']:.2f} x {signal['quantity']} | {signal['reason']}")
         
         if exit_signals:
             logger.info(f"\nEXIT SIGNALS ({len(exit_signals)}):")
             for signal in exit_signals:
-                logger.info(f"  SELL {signal['ticker']} @ ₹{signal['price']:.2f} | P&L: {signal['pnl_pct']:.2f}% | {signal['reason']}")
+                logger.info(f"  SELL {signal['ticker']} @ ₹{signal['price']:.2f} | P&L: {signal.get('pnl_pct', 0):.2f}% | {signal['reason']}")
         
         if not entry_signals and not exit_signals:
             logger.info("\nNo new signals generated.")
