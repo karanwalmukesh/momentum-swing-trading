@@ -5,20 +5,27 @@ on:
     - cron: '0 11 * * 1-5'
   workflow_dispatch:
 
+# Add explicit permissions
+permissions:
+  contents: write
+  actions: read
+  checks: read
+  
 jobs:
   run-trading-system:
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
       
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.11'
       
       - name: Install Dependencies
         run: |
@@ -45,19 +52,15 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           
+          # Pull latest changes first
+          git pull origin main --rebase || true
+          
           if [[ -n $(git status -s) ]]; then
             git add data/portfolio_state.json README.md
             git commit -m "Auto-update: Trading system run $(date -u '+%Y-%m-%d %H:%M:%S')"
-            git push
+            git push origin main
           else
             echo "No changes to commit"
           fi
-      
-      - name: Upload Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: trading-system-outputs
-          path: |
-            data/portfolio_state.json
-            README.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
