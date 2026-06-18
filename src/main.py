@@ -83,9 +83,9 @@ def main():
         # Save state
         state_engine.save_state()
         
-        # Send notifications
+        # Send notifications with stats
         logger.info(f"\n📧 Sending notifications: {len(entry_signals)} entries, {len(exit_signals)} exits")
-        notification.send_alert(entry_signals, exit_signals)
+        notification.send_alert(entry_signals, exit_signals, scan_results)
         
         # Generate dashboard
         logger.info("\n📊 Generating dashboard...")
