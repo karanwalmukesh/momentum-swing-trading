@@ -1,0 +1,63 @@
+name: Momentum Swing Trading System
+
+on:
+  schedule:
+    - cron: '0 11 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  run-trading-system:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Create Data Directory
+        run: |
+          mkdir -p data
+          if [ ! -f data/portfolio_state.json ]; then
+            echo '{"available_cash": 500000, "active_positions": [], "historical_trades": [], "total_equity": 500000, "last_update": null}' > data/portfolio_state.json
+          fi
+      
+      - name: Run Trading System
+        env:
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+        run: |
+          python src/main.py
+      
+      - name: Commit and Push Updates
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          if [[ -n $(git status -s) ]]; then
+            git add data/portfolio_state.json README.md
+            git commit -m "Auto-update: Trading system run $(date -u '+%Y-%m-%d %H:%M:%S')"
+            git push
+          else
+            echo "No changes to commit"
+          fi
+      
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: trading-system-outputs
+          path: |
+            data/portfolio_state.json
+            README.md
