@@ -5,11 +5,8 @@ on:
     - cron: '0 11 * * 1-5'
   workflow_dispatch:
 
-# Add explicit permissions
 permissions:
   contents: write
-  actions: read
-  checks: read
   
 jobs:
   run-trading-system:
@@ -19,7 +16,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
           fetch-depth: 0
       
       - name: Set up Python
@@ -36,7 +33,7 @@ jobs:
         run: |
           mkdir -p data
           if [ ! -f data/portfolio_state.json ]; then
-            echo '{"available_cash": 500000, "active_positions": [], "historical_trades": [], "total_equity": 500000, "last_update": null}' > data/portfolio_state.json
+            echo '{"available_cash": 500000, "total_equity": 500000, "active_positions": [], "historical_trades": [], "system_signals_log": [], "user_execution_log": [], "last_update": null}' > data/portfolio_state.json
           fi
       
       - name: Run Trading System
@@ -52,15 +49,22 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           
-          # Pull latest changes first
-          git pull origin main --rebase || true
+          git pull origin main --rebase --autostash || true
           
           if [[ -n $(git status -s) ]]; then
-            git add data/portfolio_state.json README.md
+            git add data/portfolio_state.json
             git commit -m "Auto-update: Trading system run $(date -u '+%Y-%m-%d %H:%M:%S')"
             git push origin main
           else
             echo "No changes to commit"
           fi
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+      
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trading-system-outputs
+          path: |
+            data/portfolio_state.json
