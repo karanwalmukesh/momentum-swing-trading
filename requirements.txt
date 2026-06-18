@@ -3,4 +3,4 @@ pandas>=2.0.0,<2.3.0
 numpy>=1.24.0,<2.0.0
 plotly>=5.14.0
 streamlit>=1.28.0
-pandas-ta>=0.3.14b
+pandas-ta>=0.3.14b0
