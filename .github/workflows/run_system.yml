@@ -1,8 +1,8 @@
-name: Momentum Swing Trading System
+name: Momentum Swing Trading System - Full Universe Scanner
 
 on:
   schedule:
-    - cron: '0 11 * * 1-5'
+    - cron: '0 11 * * 1-5'  # 4:30 PM IST Monday-Friday
   workflow_dispatch:
 
 permissions:
@@ -29,6 +29,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
+      - name: Verify CSV File
+        run: |
+          if [ -f "NSE_Sector_Master.csv" ]; then
+            echo "✅ CSV file found: NSE_Sector_Master.csv"
+            echo "📊 CSV Preview:"
+            head -n 5 NSE_Sector_Master.csv
+          else
+            echo "⚠️ NSE_Sector_Master.csv not found. System will create sample universe."
+          fi
+      
       - name: Create Data Directory
         run: |
           mkdir -p data
@@ -36,7 +46,7 @@ jobs:
             echo '{"available_cash": 500000, "total_equity": 500000, "active_positions": [], "historical_trades": [], "system_signals_log": [], "user_execution_log": [], "last_update": null}' > data/portfolio_state.json
           fi
       
-      - name: Run Trading System
+      - name: Run Trading System (Full Universe)
         env:
           EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
@@ -52,8 +62,8 @@ jobs:
           git pull origin main --rebase --autostash || true
           
           if [[ -n $(git status -s) ]]; then
-            git add data/portfolio_state.json
-            git commit -m "Auto-update: Trading system run $(date -u '+%Y-%m-%d %H:%M:%S')"
+            git add data/portfolio_state.json README.md
+            git commit -m "Auto-update: Full universe scan $(date -u '+%Y-%m-%d %H:%M:%S')"
             git push origin main
           else
             echo "No changes to commit"
@@ -68,3 +78,5 @@ jobs:
           name: trading-system-outputs
           path: |
             data/portfolio_state.json
+            README.md
+            NSE_Sector_Master.csv
