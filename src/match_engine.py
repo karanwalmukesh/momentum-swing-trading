@@ -111,7 +111,6 @@ class MatchEngine:
                         'heatmap_sector': row['Heatmap Sector']
                     })
                 
-                # Show progress for large files
                 if (idx + 1) % 100 == 0:
                     logger.info(f"  Loaded {idx + 1}/{total_rows} stocks...")
             
@@ -195,7 +194,6 @@ class MatchEngine:
             for idx, stock in enumerate(batch, start=start_idx + 1):
                 ticker = stock['ticker']
                 
-                # Show progress every 10 stocks
                 if idx % 10 == 0:
                     logger.info(f"  Progress: {idx}/{total_stocks} ({idx/total_stocks*100:.1f}%)")
                 
@@ -205,10 +203,8 @@ class MatchEngine:
                 except Exception as e:
                     logger.warning(f"Error checking {ticker}: {e}")
                 
-                # Throttle between individual requests
                 time.sleep(self.throttle_delay)
             
-            # Longer pause between batches to avoid rate limiting
             if batch_num < total_batches - 1:
                 logger.info(f"⏳ Pausing {self.batch_pause}s between batches...")
                 time.sleep(self.batch_pause)
@@ -252,7 +248,6 @@ class MatchEngine:
             total_tickers = len(tickers)
             logger.info(f"Fetching prices for {total_tickers} tickers...")
             
-            # Process in small batches
             price_batch = 5
             for i in range(0, total_tickers, price_batch):
                 batch = tickers[i:i+price_batch]
@@ -270,7 +265,6 @@ class MatchEngine:
                     
                     time.sleep(self.throttle_delay)
                 
-                # Pause between batches
                 if i + price_batch < total_tickers:
                     time.sleep(self.batch_pause)
             
@@ -290,11 +284,9 @@ class MatchEngine:
             if not all(col in data.columns for col in required_cols):
                 return {}
             
-            # Calculate moving averages
             sma20 = data['Close'].rolling(window=20).mean()
             sma50 = data['Close'].rolling(window=50).mean()
             
-            # Calculate ATR
             high_low = data['High'] - data['Low']
             high_close = abs(data['High'] - data['Close'].shift())
             low_close = abs(data['Low'] - data['Close'].shift())
@@ -312,7 +304,6 @@ class MatchEngine:
                 else:
                     atr = 0.0
                 
-                # Calculate 15-day velocity
                 if len(data) >= 15:
                     close_today = float(data['Close'].iloc[-1])
                     close_15d_ago = float(data['Close'].iloc[-15])
@@ -320,7 +311,6 @@ class MatchEngine:
                 else:
                     velocity_15d = 0.0
                 
-                # Check for breakout
                 breakout = current_close > current_sma20 and current_sma20 > current_sma50
                 
                 return {
@@ -378,22 +368,15 @@ class MatchEngine:
             
             exit_reason = None
             
-            # 1. Hard Stop Check (-5%)
             if pnl_pct <= self.hard_stop_loss:
                 exit_reason = f'Hard Stop Hit ({pnl_pct:.2f}%)'
-            
-            # 2. Breakeven Stop (transaction-adjusted)
             elif pnl_pct >= 0.5 and pnl_pct <= 1.0:
                 breakeven_price = entry_price * (1 + self.friction_coefficient)
                 if current_price <= breakeven_price:
                     exit_reason = 'Breakeven Stop Hit (Friction-adjusted)'
-            
-            # 3. Velocity Exit (15-day < 5%)
             elif holding_days >= self.holding_period_velocity:
                 if indicators and indicators.get('velocity_15d', 0) < self.velocity_threshold:
                     exit_reason = f'Velocity Exit (15-day gain: {indicators["velocity_15d"]:.2f}%)'
-            
-            # 4. Trailing Stop (>=15% profit)
             elif pnl_pct >= self.trailing_activation and atr > 0:
                 trailing_stop = highest_close - (self.atr_multiplier * atr)
                 if current_price <= trailing_stop:
@@ -431,7 +414,6 @@ class MatchEngine:
             logger.info(f"Max positions reached: {len(active_positions)}/{self.max_positions}")
             return []
         
-        # Get ALL liquid stocks
         liquid_universe = self._get_liquid_universe()
         if not liquid_universe:
             logger.warning("No liquid stocks found in universe")
@@ -453,24 +435,19 @@ class MatchEngine:
             ticker = stock['ticker']
             heatmap_sector = stock['heatmap_sector']
             
-            # Show progress every 10 stocks
             if idx % 10 == 0:
                 logger.info(f"  Scan progress: {idx}/{len(liquid_universe)} ({idx/len(liquid_universe)*100:.1f}%)")
             
-            # Skip if already held
             if ticker in active_tickers:
                 continue
             
-            # Check sector limit
             if sector_counts.get(heatmap_sector, 0) >= self.max_per_sector:
                 continue
             
-            # Calculate technical indicators
             indicators = self.calculate_technical_indicators(ticker)
             if not indicators:
                 continue
             
-            # Check for breakout
             if not indicators.get('breakout', False):
                 continue
             
@@ -479,7 +456,6 @@ class MatchEngine:
             quantity = int(allocation_per_position / current_price)
             allocated_capital = quantity * current_price
             
-            # Check cash availability
             if allocated_capital > self.state_engine.get_available_cash():
                 continue
             
@@ -524,7 +500,6 @@ class MatchEngine:
             'total_equity': self.state_engine.get_total_equity()
         }
         
-        # Check Nifty regime
         stats['nifty_regime'] = self.check_nifty_regime()
         if not stats['nifty_regime']:
             logger.info("❌ Nifty regime not favorable - skipping scan")
@@ -537,7 +512,6 @@ class MatchEngine:
             logger.info(f"❌ Max positions reached: {len(active_positions)}/{self.max_positions}")
             return stats
         
-        # Get ALL liquid stocks
         liquid_universe = self._get_liquid_universe()
         if not liquid_universe:
             return stats
@@ -551,39 +525,32 @@ class MatchEngine:
         stats['available_slots'] = available_slots
         stats['total_scanned'] = len(liquid_universe)
         
-        # Scan ALL liquid stocks
         for idx, stock in enumerate(liquid_universe, 1):
             ticker = stock['ticker']
             heatmap_sector = stock['heatmap_sector']
             
-            # Show progress
             if idx % 20 == 0:
                 logger.info(f"  Scan progress: {idx}/{len(liquid_universe)} ({idx/len(liquid_universe)*100:.1f}%)")
             
-            # Check if already held
             if ticker in active_tickers:
                 stats['already_held'] += 1
                 continue
             
-            # Check sector limit
             if sector_counts.get(heatmap_sector, 0) >= self.max_per_sector:
                 stats['sector_limits_hit'] += 1
                 continue
             
-            # Calculate indicators
             indicators = self.calculate_technical_indicators(ticker)
             if not indicators:
                 stats['technical_fail'] += 1
                 continue
             
-            # Check breakout
             if not indicators.get('breakout', False):
                 stats['technical_fail'] += 1
                 continue
             
             stats['breakout_found'] += 1
             
-            # Check cash availability
             current_price = indicators['current_price']
             quantity = int(allocation_per_position / current_price)
             allocated_capital = quantity * current_price
@@ -592,7 +559,6 @@ class MatchEngine:
                 stats['cash_insufficient'] += 1
                 continue
             
-            # Create entry signal
             entry_signal = {
                 'ticker': ticker,
                 'symbol': stock['symbol'],
@@ -614,10 +580,8 @@ class MatchEngine:
             if len(stats['entry_signals']) >= available_slots:
                 break
         
-        # Scan for exit signals
         stats['exit_signals'] = self.scan_exit_signals()
         
-        # Final summary
         logger.info("\n" + "=" * 50)
         logger.info("📊 FULL SCAN COMPLETE")
         logger.info(f"   Total stocks scanned: {stats['total_scanned']}")
