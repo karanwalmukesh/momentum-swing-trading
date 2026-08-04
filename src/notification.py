@@ -1,6 +1,7 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.header import Header
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 import logging
@@ -215,11 +216,11 @@ class NotificationManager:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
             
             msg = MIMEMultipart('alternative')
-            msg['Subject'] = f"🚀 Trading Signals - {timestamp}"
+            msg['Subject'] = Header(f"🚀 Trading Signals - {timestamp}", 'utf-8')
             msg['From'] = self.sender_email
             msg['To'] = self.recipient_email
             
-            msg.attach(MIMEText(html_content, 'html'))
+            msg.attach(MIMEText(html_content, 'html', 'utf-8'))
             
             with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
                 server.starttls()
