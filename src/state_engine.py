@@ -18,6 +18,9 @@ class StateEngine:
             try:
                 with open(self.state_file_path, 'r') as f:
                     state = json.load(f)
+                if not isinstance(state, dict):
+                    raise json.JSONDecodeError("State file is not a JSON object", "", 0)
+                state = self._merge_with_defaults(state)
                 logger.info(f"Loaded existing state from {self.state_file_path}")
                 return state
             except (json.JSONDecodeError, FileNotFoundError) as e:
@@ -26,6 +29,15 @@ class StateEngine:
         else:
             os.makedirs(os.path.dirname(self.state_file_path), exist_ok=True)
             return self._create_default_state()
+    
+    def _merge_with_defaults(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Ensure all default keys exist in a loaded state (fills missing/corrupt ones)."""
+        defaults = self._create_default_state()
+        for key, value in defaults.items():
+            if key not in state:
+                logger.warning(f"State missing key '{key}'. Initializing to default.")
+                state[key] = value
+        return state
     
     def _create_default_state(self) -> Dict[str, Any]:
         """Create default initial state."""
