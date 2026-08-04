@@ -30,6 +30,9 @@ class MatchEngine:
         self.throttle_delay = 0.3
         self.batch_size = 20
         self.batch_pause = 2.0
+        self.prefetch_batch_size = 40
+        self.prefetch_period = "3mo"
+        self._stock_data: Dict[str, pd.DataFrame] = {}
         
     def _load_universe_from_csv(self) -> List[Dict]:
         """Load complete universe from CSV file."""
@@ -137,10 +140,74 @@ class MatchEngine:
                     return None
         return None
     
-    def _check_liquidity_floor(self, ticker: str) -> bool:
+    def _prefetch_universe(self) -> None:
+        """Download OHLCV data for the whole universe in batches and cache it.
+
+        This replaces the previous per-ticker single-download loop (which made
+        thousands of sequential Yahoo requests and reliably got rate-limited /
+        timed out on GitHub Actions) with a handful of batched downloads.
+        """
+        if self._stock_data:
+            return
+        
+        tickers = [s['ticker'] for s in self.target_universe]
+        total = len(tickers)
+        if total == 0:
+            return
+        
+        logger.info(f"🌐 Prefetching data for {total} tickers in batches of {self.prefetch_batch_size}...")
+        fetched = 0
+        total_batches = (total + self.prefetch_batch_size - 1) // self.prefetch_batch_size
+        
+        for i in range(0, total, self.prefetch_batch_size):
+            batch = tickers[i:i + self.prefetch_batch_size]
+            batch_num = i // self.prefetch_batch_size + 1
+            logger.info(f"  📦 Prefetch batch {batch_num}/{total_batches} ({batch[0]}..{batch[-1]})")
+            try:
+                data = yf.download(
+                    batch, period=self.prefetch_period, interval="1d",
+                    progress=False, group_by='ticker', threads=False
+                )
+                if data is not None and not data.empty:
+                    fetched += self._store_batch_data(batch, data)
+            except Exception as e:
+                logger.warning(f"Prefetch batch {batch_num} failed: {e}")
+            
+            time.sleep(self.batch_pause)
+        
+        logger.info(f"✅ Cached data for {fetched}/{total} tickers")
+        if fetched < total:
+            logger.warning(f"⚠️ Missing data for {total - fetched} tickers (rate-limited or delisted)")
+    
+    def _store_batch_data(self, tickers: List[str], data: pd.DataFrame) -> int:
+        """Split a batched MultiIndex download result into per-ticker frames."""
+        count = 0
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                for t in data.columns.get_level_values(0).unique():
+                    try:
+                        sub = data[t].dropna(how='all')
+                        if not sub.empty and 'Close' in sub.columns:
+                            self._stock_data[t] = sub
+                            count += 1
+                    except Exception:
+                        continue
+            elif len(tickers) == 1 and 'Close' in data.columns:
+                self._stock_data[tickers[0]] = data.dropna(how='all')
+                count = 1
+        except Exception as e:
+            logger.warning(f"Could not store batch data: {e}")
+        return count
+    
+    def _get_universe_data(self, ticker: str) -> Optional[pd.DataFrame]:
+        """Return cached universe data for a ticker if available."""
+        return self._stock_data.get(ticker)
+    
+    def _check_liquidity_floor(self, ticker: str, data: Optional[pd.DataFrame] = None) -> bool:
         """Check if ticker meets minimum 20-day average volume requirement."""
         try:
-            data = self._safe_download(ticker, period="1mo")
+            if data is None:
+                data = self._get_universe_data(ticker)
             if data is None or len(data) < 20:
                 return False
             
@@ -202,8 +269,6 @@ class MatchEngine:
                         liquid_stocks.append(stock)
                 except Exception as e:
                     logger.warning(f"Error checking {ticker}: {e}")
-                
-                time.sleep(self.throttle_delay)
             
             if batch_num < total_batches - 1:
                 logger.info(f"⏳ Pausing {self.batch_pause}s between batches...")
@@ -255,6 +320,12 @@ class MatchEngine:
                 
                 for ticker in batch:
                     try:
+                        cached = self._get_universe_data(ticker)
+                        if cached is not None and 'Close' in cached.columns and len(cached) > 0:
+                            val = cached['Close'].iloc[-1]
+                            if not pd.isna(val):
+                                prices[ticker] = float(val)
+                                continue
                         data = self._safe_download(ticker, period="1d")
                         if data is not None and 'Close' in data.columns and len(data) > 0:
                             val = data['Close'].iloc[-1]
@@ -273,10 +344,14 @@ class MatchEngine:
             logger.error(f"Error fetching prices: {e}")
             return {}
     
-    def calculate_technical_indicators(self, ticker: str, period: str = "3mo") -> Dict:
+    def calculate_technical_indicators(self, ticker: str, period: str = "3mo",
+                                       data: Optional[pd.DataFrame] = None) -> Dict:
         """Calculate technical indicators for a ticker."""
         try:
-            data = self._safe_download(ticker, period=period)
+            if data is None:
+                data = self._get_universe_data(ticker)
+            if data is None:
+                data = self._safe_download(ticker, period=period)
             if data is None or len(data) < 20:
                 return {}
             
@@ -414,6 +489,7 @@ class MatchEngine:
             logger.info(f"Max positions reached: {len(active_positions)}/{self.max_positions}")
             return []
         
+        self._prefetch_universe()
         liquid_universe = self._get_liquid_universe()
         if not liquid_universe:
             logger.warning("No liquid stocks found in universe")
@@ -512,6 +588,7 @@ class MatchEngine:
             logger.info(f"❌ Max positions reached: {len(active_positions)}/{self.max_positions}")
             return stats
         
+        self._prefetch_universe()
         liquid_universe = self._get_liquid_universe()
         if not liquid_universe:
             return stats
