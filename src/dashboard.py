@@ -93,7 +93,8 @@ class DashboardGenerator:
             for pos in active:
                 entry_date = pos.get('entry_date', '')[:10]
                 holding_days = pos.get('holding_days', 0)
-                markdown += f"| {pos['ticker']} | {pos['sector']} | {entry_date} | ₹{pos['entry_price']:.2f} | ₹{pos['allocated_capital']:,.2f} | {pos['quantity']} | {holding_days} |\n"
+                sector = pos.get('sector', pos.get('heatmap_sector', 'Unknown'))
+                markdown += f"| {pos['ticker']} | {sector} | {entry_date} | ₹{pos['entry_price']:.2f} | ₹{pos['allocated_capital']:,.2f} | {pos['quantity']} | {holding_days} |\n"
         else:
             markdown += "No active positions.\n"
         
